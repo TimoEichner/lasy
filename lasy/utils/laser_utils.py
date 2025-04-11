@@ -1438,3 +1438,128 @@ def get_gdd(grid, dim, omega0, omega_gdd=None, method="sum"):
     omega_eval = omega_gdd if omega_gdd is not None else omega0
     gdd0 = np.interp(omega_eval, omega, gdd)
     return gdd, gdd0
+
+def full_width_at_level(values, level, x_axis=None):
+    """
+    Calculate the full width at a given intensity level.
+
+    For `level` = 0.5, this function returns the full width at half maximum (FWHM).
+
+    Parameters
+    ----------
+    values : array
+        array with the distribution that should be analyzed
+    level : float
+        level (0<level<1) at which to calculate the width
+    x_axis : array, optional
+        x-axis along which to calculate the width, by default None
+        If None, the width is calculated along the index of the array.
+    """
+    
+    assert 0 < level < 1, "`level` must be between 0 and 1."
+    x_axis = np.arange(values.size) if x_axis is None else x_axis
+
+    order = np.argsort(x_axis)
+    x_axis = x_axis[order]
+    values = values[order]
+
+    # find threshold that corresponds to the given level
+    threshold = np.max(values)*level
+
+    # find indices that mark the range in which values >= threshold
+    idcs = np.where(values >= threshold)[0]
+    i_min, i_max = idcs[0], idcs[-1]
+
+    # calculate positions of lower and upper bounds
+    lower_bound = np.interp(threshold, values[i_min-1:i_min+1], x_axis[i_min-1:i_min+1])
+    upper_bound = np.interp(threshold, values[i_max:i_max+2][::-1], x_axis[i_max:i_max+2][::-1])
+
+    # calculate width
+    width = upper_bound - lower_bound
+
+    return width
+
+
+def get_bandwidth(grid, dim, method='sum', level=None, unit='rad/s', omega0=None):
+    """Calculates the spectral width of a pulse in a given grid. 
+
+    By default, the bandwidth is calculated as the rms width of the spatially summed spectrum, in rad/s.
+    Optionally, the bandwidth can also be calculated on-axis, at a given intensity level or in meters.
+
+    Parameters
+    ----------
+    grid : Grid
+        The grid with the envelope to analyze.
+
+    dim : string
+        Dimensionality of the array. Options are:
+
+        - ``'xyt'``: The laser pulse is represented on a 3D grid:
+                    Cartesian (x,y) transversely, and temporal (t) longitudinally.
+        - ``'rt'`` : The laser pulse is represented on a 2D grid:
+                    Cylindrical (r) transversely, and temporal (t) longitudinally.
+
+    method : string, optional
+        Method to calculate the bandwidth. Options are:
+
+        - ``'sum'``: Calculates the width of the spatially summed spectrum.
+        - ``'on-axis'``: Calculates the width of the on-axis spectrum.
+
+    level : float, optional
+        Intensity level at which the bandwidth is calculated. If None, i.e. by default, 
+        the bandwidth is calculated as the rms width of the spectral intensity.
+
+    unit : string, optional
+        Unit in which the bandwidth should be returned.
+        Options are:
+
+        - ``'rad/s'``: Radians per second.
+        - ``'m'``: meters.
+
+    omega0 : float, optional
+        Central angular frequency of the pulse. 
+        Only required if ``unit='m'``, i.e. the bandwidth should be converted to meters.
+
+    Returns
+    -------
+    float
+        Spectral bandwidth of the pulse in the specified units and calculation method.
+    """
+
+    # Get the volume of each grid cell and spectral field
+    dV = get_grid_cell_volume(grid, dim)
+    spectral_field, omega = grid.get_spectral_field()
+
+    # Choose axis along which to calculate the bandwidth
+    assert unit in ['m', 'rad/s'], "`unit` must be either 'm' or 'rad/s'."
+    if unit == 'm':  # convert omega to wavelength
+        assert omega0, "'omega0' must be provided to calculate bandwidth in meters."
+        spectral_axis = 2*np.pi*c/(omega+omega0)
+
+    else:  # keep omega as that axis
+        spectral_axis = omega
+
+    # Calculate weights of each grid cell (amplitude of the field).
+    if dim == "xyt":
+        spectral_intensity = np.abs(spectral_field) ** 2 * dV
+
+    else:  # dim == "rt":
+        spectral_intensity = np.abs(spectral_field) ** 2 * dV[np.newaxis, :, np.newaxis]
+
+    # Selecte the method to calculate the bandwidth
+    if method == 'sum':
+        spectral_intensity = np.sum(spectral_intensity, axis=(0, 1))
+    else:
+        if dim == 'xyt':
+            spectral_intensity = spectral_intensity[grid.npoints[0] //
+                                                    2, grid.npoints[1]//2, :]
+        else:  # dim=='rt'
+            spectral_intensity = spectral_intensity[0, 0, :]
+
+    if level:
+        bandwidth = full_width_at_level(spectral_intensity, level, x_axis=spectral_axis)
+
+    else:  # default case, calculate rms width
+        bandwidth = weighted_std(spectral_axis, spectral_intensity)
+
+    return bandwidth
