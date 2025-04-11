@@ -82,6 +82,7 @@ def normalize_energy(dim, energy, grid):
         return
 
     current_energy = compute_laser_energy(dim, grid)
+
     if current_energy == 0.0:
         print("Field is zero everywhere, normalization will be skipped")
     else:
@@ -1347,7 +1348,7 @@ def get_spectral_phase(grid, dim, omega0, method="sum", ordering="zero_center"):
     assert grid.is_envelope
 
     # get the spectral field
-    field_spectral, omega = grid.get_spectral_field()
+    spectral_field, omega = grid.get_spectral_field()
 
     # if method=='on-axis' get the on-axis field envelope, and calculate its phase
     assert method in ["on-axis", "sum"]
@@ -1355,9 +1356,9 @@ def get_spectral_phase(grid, dim, omega0, method="sum", ordering="zero_center"):
         if dim == "xyt":
             Nx = grid.npoints[0]
             Ny = grid.npoints[1]
-            phase = np.angle(field_spectral[Nx // 2, Ny // 2, :])
+            phase = np.angle(spectral_field[Nx // 2, Ny // 2, :])
         else:  # dim=='rt'
-            phase = np.angle(field_spectral[0, 0, :])
+            phase = np.angle(spectral_field[0, 0, :])
 
     # if method=='sum' integrate the field spatially before getting the phase from it
     else:  # method='sum'
@@ -1365,9 +1366,9 @@ def get_spectral_phase(grid, dim, omega0, method="sum", ordering="zero_center"):
         dV = get_grid_cell_volume(grid, dim)
 
         if dim == "xyt":
-            summed_field = np.sum(field_spectral * dV, axis=(0, 1))
+            summed_field = np.sum(spectral_field * dV, axis=(0, 1))
         else:  # dim=='rt'
-            summed_field = np.sum(field_spectral * dV[None, :, None], axis=(0, 1))
+            summed_field = np.sum(spectral_field * dV[None, :, None], axis=(0, 1))
 
         phase = np.angle(summed_field)
 
@@ -1490,31 +1491,26 @@ def get_strehl(grid, dim, method='full'):
     """
 
     # get the spectral field
-    field_spectral = grid.get_spectral_field()
+    spectral_field, omega = grid.get_spectral_field()
 
     # create reference field with flat spatio-spectral phase to which the actual field is compared
-    field_spectral_reference = abs(field_spectral)
+    spectral_field_reference = abs(spectral_field)
 
     if dim == 'rt':
         # reshape the 'rt' fields for the fft to work properly
-        field_spectral = np.concatenate(
-            (field_spectral[:, ::-1, :], field_spectral), axis=1)
-        field_spectral_reference = np.concatenate(
-            (field_spectral_reference[:, ::-1, :], field_spectral_reference), axis=1)
+        spectral_field = np.concatenate((spectral_field[:, ::-1, :], spectral_field), axis=1)
+        spectral_field_reference = np.concatenate((spectral_field_reference[:, ::-1, :], spectral_field_reference), axis=1)
 
     # calculate the compressed, in-focus (Fourier transformed) fields
-    field_temporal_reference = np.fft.ifft2(np.fft.ifft(
-        field_spectral_reference, axis=-1), axes=(0, 1))
-    field_temporal_reference = np.fft.fftshift(
-        field_temporal_reference, axes=(0, 1))
+    temporal_field_reference = np.fft.ifft2(np.fft.ifft(spectral_field_reference, axis=-1), axes=(0, 1))
+    temporal_field_reference = np.fft.fftshift(temporal_field_reference, axes=(0, 1))
 
-    field_temporal = np.fft.ifft2(np.fft.ifft(
-        field_spectral, axis=-1), axes=(0, 1))
-    field_temporal = np.fft.fftshift(field_temporal, axes=(0, 1))
+    temporal_field = np.fft.ifft2(np.fft.ifft(spectral_field, axis=-1), axes=(0, 1))
+    temporal_field = np.fft.fftshift(temporal_field, axes=(0, 1))
 
     # calculate the intensity of the reference and the actual field
-    intensity_reference = abs(field_temporal_reference)**2
-    intensity = abs(field_temporal)**2
+    intensity_reference = abs(temporal_field_reference)**2
+    intensity = abs(temporal_field)**2
 
     # for temporal strehl, sum over spatial axes
     if method == 'temporal':
