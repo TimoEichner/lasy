@@ -1438,3 +1438,104 @@ def get_gdd(grid, dim, omega0, omega_gdd=None, method="sum"):
     omega_eval = omega_gdd if omega_gdd is not None else omega0
     gdd0 = np.interp(omega_eval, omega, gdd)
     return gdd, gdd0
+
+def get_strehl(grid, dim, method='full'):
+    r"""
+    Calculate the Strehl ratio of the laser pulse.
+
+    Depending on the calculation method, either the full spatio-temporal Strehl ('full'), the spatial Strehl ('spatial'), or the temporal Strehl ratio ('temporal') is calculated.
+    By default, the full spatio-temporal Strehl is calculated.
+
+    To calculate the strehl in the three cases, the following method is used:
+
+    .. math ::
+
+        SR_\mathrm{full} = \frac{\max\left[|E(x,y,t)|^2\right]}{\max\left[|E_{\phi=0}(x,y,t)|^2\right]}
+
+    .. math ::
+
+        SR_\mathrm{spatial} = \frac{\max\left[\int |E(x,y,t)|^2 dt\right]}{\max\left[\int |E_{\phi=0}(x,y,t)|^2 dt\right]}
+
+    .. math ::
+
+        SR_\mathrm{temporal} = \frac{\max\left[\int\int |E(x,y,t)|^2 dx dy\right]}{\max\left[\int \int |E_{\phi=0}(x,y,t)|^2 dx dy\right]}
+
+    where :math: `E(x,y,t)` is the in-focus electric field envelope of the pulse. :math: `E_{\phi=0}(x,y,t)` is the in-focus envelope with flat phase, i.e. with flat wavefront and spectral phase
+
+
+    Parameters
+    ----------
+    grid : a Grid object.
+        It contains an ndarray (V/m) with the value of the envelope field and the associated metadata that defines the points at which the laser is defined.
+
+    dim : string
+        Dimensionality of the array. Options are:
+
+        - ``'xyt'``: The laser pulse is represented on a 3D grid:
+                    Cartesian (x,y) transversely, and temporal (t) longitudinally.
+        - ``'rt'`` : The laser pulse is represented on a 2D grid:
+                    Cylindrical (r) transversely, and temporal (t) longitudinally.
+
+    method: string, optional
+        Method to calculate the Strehl ratio. Options are:
+
+        - ``'full'``: (default) Calculates the full spatio-temporal Strehl
+        - ``'spatial'``: Calculates the temporally integrated, spatial Strehl
+        - ``'temporal'``: Calculates the spatially integrated, temporal Strehl
+
+    Returns
+    -------
+    strehl : Strehl ratio
+
+    """
+
+    # get the spectral field
+    field_spectral = grid.get_spectral_field()
+
+    # create reference field with flat spatio-spectral phase to which the actual field is compared
+    field_spectral_reference = abs(field_spectral)
+
+    if dim == 'rt':
+        # reshape the 'rt' fields for the fft to work properly
+        field_spectral = np.concatenate(
+            (field_spectral[:, ::-1, :], field_spectral), axis=1)
+        field_spectral_reference = np.concatenate(
+            (field_spectral_reference[:, ::-1, :], field_spectral_reference), axis=1)
+
+    # calculate the compressed, in-focus (Fourier transformed) fields
+    field_temporal_reference = np.fft.ifft2(np.fft.ifft(
+        field_spectral_reference, axis=-1), axes=(0, 1))
+    field_temporal_reference = np.fft.fftshift(
+        field_temporal_reference, axes=(0, 1))
+
+    field_temporal = np.fft.ifft2(np.fft.ifft(
+        field_spectral, axis=-1), axes=(0, 1))
+    field_temporal = np.fft.fftshift(field_temporal, axes=(0, 1))
+
+    # calculate the intensity of the reference and the actual field
+    intensity_reference = abs(field_temporal_reference)**2
+    intensity = abs(field_temporal)**2
+
+    # for temporal strehl, sum over spatial axes
+    if method == 'temporal':
+        I_reference_summed = intensity_reference.sum(axis=(0, 1))
+        I_summed = intensity.sum(axis=(0, 1))
+
+    # for spatial strehl, sum over temporal axes
+    elif method == 'spatial':
+        I_reference_summed = intensity_reference.sum(axis=-1)
+        I_summed = intensity.sum(axis=-1)
+
+    # for spatio-temporal strehl, use the full field
+    else:  # method=='full'
+        I_reference_summed = intensity_reference
+        I_summed = intensity
+
+    # get the max value of each intensit array
+    I_reference_max = I_reference_summed.max()
+    I_max = I_summed.max()
+
+    # calculate the strehl
+    strehl = I_max/I_reference_max
+
+    return strehl
