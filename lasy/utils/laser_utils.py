@@ -1447,15 +1447,15 @@ def full_width_at_level(values, level, x_axis=None):
 
     Parameters
     ----------
-    values : array
+    values : 1d array
         array with the distribution that should be analyzed
     level : float
         level (0<level<1) at which to calculate the width
-    x_axis : array, optional
+    x_axis : 1d array, optional
         x-axis along which to calculate the width, by default None
         If None, the width is calculated along the index of the array.
     """
-    
+    assert values.ndim == 1, "`values` must be a 1D array."
     assert 0 < level < 1, "`level` must be between 0 and 1."
     x_axis = np.arange(values.size) if x_axis is None else x_axis
 
@@ -1470,7 +1470,7 @@ def full_width_at_level(values, level, x_axis=None):
     idcs = np.where(values >= threshold)[0]
     i_min, i_max = idcs[0], idcs[-1]
 
-    # calculate positions of lower and upper bounds
+    # interpolate positions of lower and upper bounds
     lower_bound = np.interp(threshold, values[i_min-1:i_min+1], x_axis[i_min-1:i_min+1])
     upper_bound = np.interp(threshold, values[i_max:i_max+2][::-1], x_axis[i_max:i_max+2][::-1])
 
@@ -1547,9 +1547,10 @@ def get_bandwidth(grid, dim, method='sum', level=None, unit='rad/s', omega0=None
         spectral_intensity = np.abs(spectral_field) ** 2 * dV[np.newaxis, :, np.newaxis]
 
     # Selecte the method to calculate the bandwidth
+    assert method in ['sum', 'on-axis'], "`method` must be either 'sum' or 'on-axis'."
     if method == 'sum':
         spectral_intensity = np.sum(spectral_intensity, axis=(0, 1))
-    else:
+    else: # method == 'on-axis'
         if dim == 'xyt':
             spectral_intensity = spectral_intensity[grid.npoints[0] //
                                                     2, grid.npoints[1]//2, :]
