@@ -1498,8 +1498,9 @@ def get_strehl(grid, dim, method='full'):
 
     if dim == 'rt':
         # reshape the 'rt' fields for the fft to work properly
-        spectral_field = np.array([np.concatenate((spectral_field[m, ::-1, :] * (-1.)**m, spectral_field[m])) for m in grid.azimuthal_modes])
+        spectral_field = np.array([np.concatenate((spectral_field[m, ::-1] * (-1.)**m, spectral_field[m])) for m in grid.azimuthal_modes])
 
+        # calculate the temporally compressed, in-focus (Fourier transformed) fields
         spectral_field = np.fft.fftshift(spectral_field, axes=1)
         temporal_infocus_field = np.fft.ifft2(spectral_field, axes=(1, 2))
 
@@ -1513,7 +1514,7 @@ def get_strehl(grid, dim, method='full'):
         temporal_infocus_field_reference = np.sum(temporal_infocus_field_reference, axis=0)
 
     else:  # dim=='xyt'
-        # calculate the compressed, in-focus (Fourier transformed) fields
+        # calculate the temporally compressed, in-focus (Fourier transformed) fields
         temporal_infocus_field_reference = np.fft.ifft2(np.fft.ifft(spectral_field_reference, axis=-1), axes=(0, 1))
         temporal_infocus_field_reference = np.fft.fftshift(temporal_infocus_field_reference, axes=(0, 1))
 
