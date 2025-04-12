@@ -1447,7 +1447,7 @@ def get_strehl(grid, dim, method='full'):
     Depending on the calculation method, either the full spatio-temporal Strehl ('full'), the spatial Strehl ('spatial'), or the temporal Strehl ratio ('temporal') is calculated.
     By default, the full spatio-temporal Strehl is calculated.
 
-    To calculate the strehl in the three cases, the following method is used:
+    To calculate the strehl in the three cases, the following methods are used:
 
     .. math ::
 
@@ -1498,20 +1498,33 @@ def get_strehl(grid, dim, method='full'):
 
     if dim == 'rt':
         # reshape the 'rt' fields for the fft to work properly
-        spectral_field = np.concatenate((spectral_field[:, ::-1, :], spectral_field), axis=1)
-        spectral_field_reference = np.concatenate((spectral_field_reference[:, ::-1, :], spectral_field_reference), axis=1)
+        spectral_field = np.array([np.concatenate((spectral_field[m, ::-1, :] * (-1.)**m, spectral_field[m])) for m in grid.azimuthal_modes])
 
-    # calculate the compressed, in-focus (Fourier transformed) fields
-    temporal_field_reference = np.fft.ifft2(np.fft.ifft(spectral_field_reference, axis=-1), axes=(0, 1))
-    temporal_field_reference = np.fft.fftshift(temporal_field_reference, axes=(0, 1))
+        spectral_field = np.fft.fftshift(spectral_field, axes=1)
+        temporal_infocus_field = np.fft.ifft2(spectral_field, axes=(1, 2))
 
-    temporal_field = np.fft.ifft2(np.fft.ifft(spectral_field, axis=-1), axes=(0, 1))
-    temporal_field = np.fft.fftshift(temporal_field, axes=(0, 1))
+        # sum over all modes
+        temporal_infocus_field = np.sum(temporal_infocus_field, axis=0)[None,:,:]
+
+        # repeat same for the reference field
+        spectral_field_reference = np.array([np.concatenate((spectral_field_reference[m, ::-1, :] * (-1.)**m, spectral_field_reference[m])) for m in grid.azimuthal_modes])
+        spectral_field_reference = np.fft.fftshift(spectral_field_reference, axes=1)
+        temporal_infocus_field_reference = np.fft.ifft2(spectral_field_reference, axes=(1, 2))
+        temporal_infocus_field_reference = np.sum(temporal_infocus_field_reference, axis=0)
+
+    else:  # dim=='xyt'
+        # calculate the compressed, in-focus (Fourier transformed) fields
+        temporal_infocus_field_reference = np.fft.ifft2(np.fft.ifft(spectral_field_reference, axis=-1), axes=(0, 1))
+        temporal_infocus_field_reference = np.fft.fftshift(temporal_infocus_field_reference, axes=(0, 1))
+
+        temporal_infocus_field = np.fft.ifft2(np.fft.ifft(spectral_field, axis=-1), axes=(0, 1))
+        temporal_infocus_field = np.fft.fftshift(temporal_infocus_field, axes=(0, 1))
 
     # calculate the intensity of the reference and the actual field
-    intensity_reference = abs(temporal_field_reference)**2
-    intensity = abs(temporal_field)**2
+    intensity_reference = abs(temporal_infocus_field_reference)**2
+    intensity = abs(temporal_infocus_field)**2
 
+    assert method in ['full', 'temporal', 'spatial'], "Method must be 'full', 'temporal' or 'spatial'."
     # for temporal strehl, sum over spatial axes
     if method == 'temporal':
         I_reference_summed = intensity_reference.sum(axis=(0, 1))
